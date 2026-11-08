@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/kthaisociety/kthais-backend/compare/v1.0.0...v1.1.0) (2026-11-08)
+
+
+### Miscellaneous Chores
+
+* release 1.1.0, which moves the website's files to GleSYS ([#170](https://github.com/kthaisociety/kthais-backend/issues/170)) ([4d533d2](https://github.com/kthaisociety/kthais-backend/commit/4d533d2bc4c12ef9c2f9e9b33725e87d735fb72e))
+
 ## 1.0.0 (2026-11-05)
 
 
