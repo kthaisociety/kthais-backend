@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +21,9 @@ const (
 
 type Config struct {
 	Database struct {
+		// URL is DATABASE_URL, which the delivery pipeline sets from its
+		// Postgres. When set it wins over the DB_* parts below; see DSN.
+		URL      string
 		Host     string
 		Port     string
 		User     string
@@ -100,15 +104,18 @@ type Config struct {
 	// accepted. Empty by default — the notify call is skipped (logged, not
 	// fatal) until onboarding-service is actually deployed.
 	OnboardingServiceURL string
-	R2_bucket_name       string
-	R2_access_key        string
-	R2_access_key_id     string
-	R2_endpoint          string
-	R2_Account_Id        string // might not be needed
-	// R2_use_path_style addresses objects as endpoint/bucket/key instead of
-	// bucket.endpoint/key. Off for Cloudflare R2; on for the local S3Mock in
-	// docker-compose.yml, which only understands path-style requests.
-	R2_use_path_style bool
+
+	// S3 is the object storage for résumés, profile pictures, project media
+	// and logos: the project's GleSYS storage in staging and production, one
+	// private bucket, "files". The pipeline writes these values
+	// (secret/kthais-backend/<env>/storage).
+	S3 struct {
+		AccessKeyID     string
+		SecretAccessKey string
+		Endpoint        string
+		Region          string
+		BucketFiles     string
+	}
 
 	SES struct {
 		Region  string
@@ -121,6 +128,7 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{}
 
 	// Database config
+	cfg.Database.URL = strings.TrimSpace(getEnv("DATABASE_URL", ""))
 	cfg.Database.Host = getEnv("DB_HOST", "localhost")
 	cfg.Database.Port = getEnv("DB_PORT", "5432")
 	cfg.Database.User = getEnv("DB_USER", "postgres")
@@ -187,20 +195,21 @@ func LoadConfig() (*Config, error) {
 
 	// RS256 key pair for the member jwt cookie. There is no default:
 	// ValidateJWTKeys rejects a missing or malformed pair at startup.
-	cfg.JwtSigningKey = strings.TrimSpace(os.Getenv("JWT_PRIVATE_KEY"))
-	cfg.JwtValidatingKey = strings.TrimSpace(os.Getenv("JWT_PUBLIC_KEY"))
+	cfg.JwtSigningKey = normalizePEM(os.Getenv("JWT_PRIVATE_KEY"))
+	cfg.JwtValidatingKey = normalizePEM(os.Getenv("JWT_PUBLIC_KEY"))
 
 	cfg.MCPServiceSecret = getEnv("MCP_SERVICE_SECRET", "")
 	cfg.OnboardingServiceSecret = getEnv("ONBOARDING_SERVICE_SECRET", "")
 	cfg.OnboardingServiceURL = getEnv("ONBOARDING_SERVICE_URL", "")
 
-	//Cloudflare R2
-	cfg.R2_bucket_name = getEnv("R2_Bucket", "")
-	cfg.R2_access_key = getEnv("R2_Secret_Access_Key", "off key scraper")
-	cfg.R2_access_key_id = getEnv("R2_Access_Key_Id", "")
-	cfg.R2_endpoint = getEnv("R2_Endpoint", "")
-	cfg.R2_Account_Id = getEnv("R2_Account_Id", "")
-	cfg.R2_use_path_style = strings.EqualFold(getEnv("R2_Use_Path_Style", "false"), "true")
+	// Object storage. The names are the pipeline's (deployments' project.yaml
+	// guide); S3_BUCKET_FILES is the bucket "files" in infrastructure's
+	// projects.yaml. GleSYS ignores the region, but requests are signed with one.
+	cfg.S3.AccessKeyID = getEnv("S3_ACCESS_KEY_ID", "")
+	cfg.S3.SecretAccessKey = getEnv("S3_SECRET_ACCESS_KEY", "")
+	cfg.S3.Endpoint = getEnv("S3_ENDPOINT", "")
+	cfg.S3.Region = getEnv("S3_REGION", "us-east-1")
+	cfg.S3.BucketFiles = getEnv("S3_BUCKET_FILES", "")
 
 	// Debug OAuth configuration
 	// fmt.Printf("Google Client ID: %s\n", maskString(cfg.OAuth.GoogleClientID))
@@ -281,6 +290,46 @@ func ValidateJWTKeys(cfg *Config) error {
 		return fmt.Errorf("JWT_PUBLIC_KEY does not match JWT_PRIVATE_KEY")
 	}
 	return nil
+}
+
+// DSN is the Postgres connection string: DATABASE_URL when set, with
+// sslmode=DB_SSLMODE added if the URL names none (the pipeline's URL has no
+// sslmode), otherwise a key=value DSN built from the DB_* parts.
+func (c *Config) DSN() (string, error) {
+	if c.Database.URL == "" {
+		return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+			c.Database.Host, c.Database.User, c.Database.Password, c.Database.DBName, c.Database.Port, c.Database.SSLMode), nil
+	}
+	u, err := url.Parse(c.Database.URL)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		// Don't echo the value: it holds the password.
+		return "", fmt.Errorf("DATABASE_URL is not a postgres:// or postgresql:// URL")
+	}
+	q := u.Query()
+	if q.Get("sslmode") == "" && c.Database.SSLMode != "" {
+		q.Set("sslmode", c.Database.SSLMode)
+		u.RawQuery = q.Encode()
+	}
+	return u.String(), nil
+}
+
+// JWTCookieName is the member JWT cookie's name. "__Host-jwt" when the cookie
+// meets that prefix's rules (Secure, Path=/, no Domain), so the browser keeps
+// it on the exact host that set it and staging and production never see each
+// other's sessions. Otherwise "jwt": local http, or a deployment that still
+// sets COOKIE_DOMAIN to share the cookie with another host.
+func (c *Config) JWTCookieName() string {
+	if c.JwtCookieSecure && c.CookieDomain == "" {
+		return "__Host-jwt"
+	}
+	return "jwt"
+}
+
+// normalizePEM trims a PEM value and turns literal "\n" sequences into
+// newlines, so a key works whether it was stored with real newlines or on
+// one line (as the frontend's src/proxy.ts also accepts).
+func normalizePEM(raw string) string {
+	return strings.TrimSpace(strings.ReplaceAll(raw, `\n`, "\n"))
 }
 
 // normalizeCookieDomain strips an accidental :port suffix. Cookie Domain attributes must not contain ports.

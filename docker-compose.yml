@@ -15,9 +15,8 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
 
-  # Local stand-in for Cloudflare R2 (uploaded logos and other blobs). It only
-  # understands path-style requests, so .env needs R2_Use_Path_Style=true; see
-  # .env.example for the matching R2_* values.
+  # Local stand-in for the GleSYS object storage (uploaded logos and other
+  # blobs). See .env.example for the matching S3_* values.
   s3:
     image: adobe/s3mock:5.2.3
     # The image runs as an unprivileged user that can't write to a fresh,
