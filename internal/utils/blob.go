@@ -71,9 +71,10 @@ func (b BlobStore) GetObject(object_key string) ([]byte, error) {
 	if err != nil {
 		return []byte{}, err
 	}
+	defer response.Body.Close()
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
-		return []byte{}, nil
+		return []byte{}, err
 	}
 	return data, nil
 }

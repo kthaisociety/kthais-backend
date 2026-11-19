@@ -22,7 +22,7 @@
 - `LUMA_API_KEY`, `LUMA_MEMBERS_TIER_ID`
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_REGION`, `SES_SENDER`, `SES_REPLY_TO`
 - `MCP_SERVICE_SECRET`, `ONBOARDING_SERVICE_SECRET`, `ONBOARDING_SERVICE_URL`
-- `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_REGION` (default `us-east-1`), `S3_BUCKET_FILES`: object storage. The pipeline sets them to the project's GleSYS storage. Requests are always path-style (`endpoint/bucket/key`).
+- `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_REGION` (default `us-east-1`), `S3_BUCKET_FILES`: object storage. The pipeline sets them to the project's GleSYS storage. Requests are always path-style (`endpoint/bucket/key`). Locally, `.env.example` points them at the S3Mock from `docker-compose.yml`.
 
 ## Startup Gotchas
 
